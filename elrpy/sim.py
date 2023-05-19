@@ -9,18 +9,23 @@ from models import logistic, init_logistic
 
 import jax
 
-rng = jax.random.PRNGKey(0)
+rng = jax.random.PRNGKey(1)
 
-n, d, k = 100_000, 10, 300
+n, d, k = 100_000, 50, 300
 
-beta, X, Y, group_data = normal_sim(rng, n, d, k)
+true_params, X, Y, group_data = normal_sim(rng, n, d, k)
 
-losses = [disagg_ce_loss, lyapunov_loss]
+losses = [lyapunov_loss]
 
 for loss in losses:
     model_fn, model_params = init_logistic(rng, d)
+    print("test")
     model_params, grad_norm = fit(
         loss, logistic, model_params, group_data,
-        verbose=True, lr=1e-2
+        verbose=2, lr=1e-2, print_every=100
     )
-    print(np.sum((beta - model_params["beta"])**2), grad_norm)
+    print(
+        np.sqrt(np.sum((true_params - model_params)**2)) / d, 
+        np.sqrt(np.sum((model_fn(true_params, X) - model_fn(model_params, X))**2)) / n,
+        grad_norm
+    )

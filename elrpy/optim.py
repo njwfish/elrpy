@@ -4,16 +4,17 @@ from typing import Any, Optional, Tuple, Callable
 
 def get_mapped_fn(fn, group_data):
     group_Xs, group_Ys, group_Ns = group_data
-    num_groups = len(group_Ns)
-    mapped_fn = (lambda model_params: 
-    jax.tree_util.tree_reduce(
-        lambda x, y: x + y,
-        jax.tree_util.tree_map(
-            lambda group_X, group_Y, group_N: 
-            fn(model_params, group_X, group_Y, group_N), 
-            group_Xs, group_Ys, group_Ns
+    mapped_fn = (
+        lambda model_params: 
+        jax.tree_util.tree_reduce(
+            lambda x, y: x + y,
+            jax.tree_util.tree_map(
+                lambda group_X, group_Y, group_N: 
+                fn(model_params, group_X, group_Y, group_N), 
+                group_Xs, group_Ys, group_Ns
+            )
         )
-    ) / num_groups)
+    )
     return mapped_fn
 
 def get_mapped_fns(
@@ -33,20 +34,21 @@ def get_mapped_fns(
         tuple: loss function, gradient function
     """
     group_Xs, group_Ys, group_Ns = group_data
+    num_groups = len(group_Ns)
     
-    loss_fn = jax.jit(
-        lambda params, group_X, group_Y, group_N: 
+    loss_fn = (lambda params, group_X, group_Y, group_N: 
         _loss_fn(
             model_fn(params, group_X), group_Y, group_N
-        )
+        ) / num_groups
     )
 
-    grad_fn = jax.jit(
-        jax.grad(
+    grad_fn = jax.grad(
             lambda params, group_X, group_Y, group_N: 
             loss_fn(params, group_X, group_Y, group_N)
-        )
     )
+
+    loss_fn = jax.jit(loss_fn)
+    grad_fn = jax.jit(grad_fn)
     
     mapped_loss_fn = get_mapped_fn(
         loss_fn, (group_Xs, group_Ys, group_Ns)
@@ -79,9 +81,11 @@ def fit(
         model_params: dict, 
         group_data: Tuple[dict],
         maxit: Optional[int] = 500_000, 
-        eps: Optional[float] = 1e-8, 
-        verbose: Optional[bool] = False, 
-        lr: Optional[float] = 0.5
+        eps: Optional[float] = 1e-6, 
+        verbose: Optional[int] = 0, 
+        print_every: Optional[int] = 500, 
+        lr: Optional[float] = 1e-4,
+        mapped_fns = None
 ) -> Tuple[dict, float]:
     """Fit a model to data using gradient descent.
 
@@ -98,22 +102,33 @@ def fit(
         fitted model parameters
         gradient norm
     """
-    loss_fn, grad_fn = get_mapped_fns(loss_fn, model_fn, group_data)
+    if mapped_fns is None:
+        loss_fn, grad_fn = get_mapped_fns(loss_fn, model_fn, group_data)
+    else:
+        loss_fn, grad_fn = mapped_fns
+
+    if verbose == 2:
+        "Fitting model..."
 
     for i in range(maxit):
-        grads = {"beta": grad_fn(model_params)}
-        grad_norm = sum(np.sum(grads[k]**2) for k in grads)
-        if i % 500 == 0 and verbose:
-            print(i, loss_fn(model_params,), grad_norm)
-        if any([np.any(np.isnan(grads[k])) for k in grads]):
+        grads = grad_fn(model_params)
+        grad_norm = np.sqrt(np.sum(grads**2))
+        if i % print_every == 0 and verbose == 2:
+            print(
+                i, loss_fn(model_params), 
+                grad_norm, lr
+            )
+        if np.any(np.isnan(grads)):
             print("NaN gradient update, aborting...")
             break
         model_params = grad_update(model_params, grads, lr=lr)
-        if grad_norm < eps:
+        if grad_norm < eps and verbose > 0:
             print("Converged!")
+            if verbose == 2:
+                print(i, loss_fn(model_params), grad_norm, np.max(model_params), lr)
             break
 
-    if grad_norm > eps:
+    if grad_norm > eps and verbose > 0:
         print(f"Failed to converge, gradient norm is {grad_norm}.")
-
-    return model_params, grad_norm
+        
+    return model_params, grad_norm, (loss_fn, grad_fn)
