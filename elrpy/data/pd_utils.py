@@ -67,7 +67,9 @@ def transform_covars(
             drop_non_numeric_cols, fill_na, drop_constant_cols
         ]
     if np_transforms is None:
-        np_transforms = [standardize]
+        np_transforms = [
+            standardize, add_intercept
+        ]
     
     for transform in pd_transforms:
         covars = transform(covars)

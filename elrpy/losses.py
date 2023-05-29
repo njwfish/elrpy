@@ -20,7 +20,7 @@ def ecoreg_loss(p, Y, N, eps=1e-6):
 
 
 def lyapunov_loss(p, Y, N, eps=1e-6):
-    p = (1 - eps) * p + eps / 2
+    # p = (1 - eps) * p + eps / 2
     phi2 = np.sum(p * (1 - p), axis=0)
     mu = np.sum(p, axis=0)
     loss = -1/2 * np.log(phi2) + (1 / phi2) * (Y - mu)**2

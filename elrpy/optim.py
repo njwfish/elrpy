@@ -1,26 +1,12 @@
 import jax
 from jax import numpy as np
+from jaxopt import BacktrackingLineSearch
 from typing import Any, Optional, Tuple, Callable
 
-def get_mapped_fn(fn, group_data):
-    group_Xs, group_Ys, group_Ns = group_data
-    mapped_fn = (
-        lambda model_params: 
-        jax.tree_util.tree_reduce(
-            lambda x, y: x + y,
-            jax.tree_util.tree_map(
-                lambda group_X, group_Y, group_N: 
-                fn(model_params, group_X, group_Y, group_N), 
-                group_Xs, group_Ys, group_Ns
-            )
-        )
-    )
-    return mapped_fn
-
-def get_mapped_fns(
-        _loss_fn: Callable,
+def get_mapped_loss_and_grad(
+        loss_fn: Callable,
         model_fn: Callable,
-        group_data: Tuple[dict]
+        group_data: Tuple[Any, Any, Any],
 ) -> Tuple[Callable, Callable]:
     """Returns a function that computes the gradient of the loss function with
     respect to the model parameters.
@@ -33,35 +19,33 @@ def get_mapped_fns(
     Returns:
         tuple: loss function, gradient function
     """
-    group_Xs, group_Ys, group_Ns = group_data
+    _, _, group_Ns = group_data
     num_groups = len(group_Ns)
-    
-    loss_fn = (lambda params, group_X, group_Y, group_N: 
-        _loss_fn(
-            model_fn(params, group_X), group_Y, group_N
-        ) / num_groups
-    )
 
-    grad_fn = jax.grad(
-            lambda params, group_X, group_Y, group_N: 
-            loss_fn(params, group_X, group_Y, group_N)
-    )
+    def wrapped_loss(model_params, group_X, group_Y, group_N):
+        return loss_fn(model_fn(model_params, group_X), group_Y, group_N) / num_groups
 
-    loss_fn = jax.jit(loss_fn)
-    grad_fn = jax.jit(grad_fn)
-    
-    mapped_loss_fn = get_mapped_fn(
-        loss_fn, (group_Xs, group_Ys, group_Ns)
-    )
-    mapped_grad_fn = get_mapped_fn(
-        grad_fn, (group_Xs, group_Ys, group_Ns)
-    )
+    wrapped_loss = jax.jit(jax.value_and_grad(wrapped_loss))
 
-    return mapped_loss_fn, mapped_grad_fn
+    def loss_and_grad_fn(model_params, group_data):
+        group_Xs, group_Ys, group_Ns = group_data
+        num_groups = len(group_Ns)
+        group_losses = jax.tree_util.tree_map(
+            lambda group_X, group_Y, group_N: 
+            wrapped_loss(model_params, group_X, group_Y, group_N), 
+            group_Xs, group_Ys, group_Ns
+        )
+        mean_loss, grad = jax.tree_util.tree_reduce(
+            lambda x, y: (x[0] + y[0], x[1] + y[1]), group_losses, 
+            is_leaf=lambda x: not isinstance(x, dict)
+        )
+        return mean_loss, grad
+
+    return loss_and_grad_fn
 
 
 
-def grad_update(params: dict, grads: dict, lr: Optional[float]=1.0) -> dict:
+def grad_update(params: np.ndarray, grads: np.ndarray, lr: Optional[float]=1.0) -> dict:
     """Update parameters using gradient descent.
     
     Args:
@@ -72,7 +56,7 @@ def grad_update(params: dict, grads: dict, lr: Optional[float]=1.0) -> dict:
     Returns:
         updated parameters
     """
-    return jax.tree_util.tree_map(lambda p, g: p - lr * g, params, grads)
+    return params - lr * grads
 
 
 def fit(
@@ -84,8 +68,10 @@ def fit(
         eps: Optional[float] = 1e-6, 
         verbose: Optional[int] = 0, 
         print_every: Optional[int] = 500, 
-        lr: Optional[float] = 1e-4,
-        mapped_fns = None
+        init_lr: Optional[float] = 1.0,
+        lr_floor: Optional[float] = 1e-6,
+        loss_and_grad_fn = None,
+        ls = None
 ) -> Tuple[dict, float]:
     """Fit a model to data using gradient descent.
 
@@ -102,33 +88,38 @@ def fit(
         fitted model parameters
         gradient norm
     """
-    if mapped_fns is None:
-        loss_fn, grad_fn = get_mapped_fns(loss_fn, model_fn, group_data)
-    else:
-        loss_fn, grad_fn = mapped_fns
-
-    if verbose == 2:
-        "Fitting model..."
+    n_params = np.prod(np.array(model_params.shape))
+    if loss_and_grad_fn is None:
+        loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, group_data)
+    if ls is None:
+        ls = BacktrackingLineSearch(
+            fun=loss_and_grad_fn, maxiter=20, 
+            condition="goldstein", decrease_factor=0.8, 
+            jit=False, value_and_grad=True
+        )
 
     for i in range(maxit):
-        grads = grad_fn(model_params)
-        grad_norm = np.sqrt(np.sum(grads**2))
-        if i % print_every == 0 and verbose == 2:
-            print(
-                i, loss_fn(model_params), 
-                grad_norm, lr
-            )
-        if np.any(np.isnan(grads)):
+        loss, grad = loss_and_grad_fn(model_params, group_data)
+        grad_norm = np.sqrt(np.sum(grad**2)) / n_params 
+        if np.any(np.isnan(grad)):
             print("NaN gradient update, aborting...")
             break
-        model_params = grad_update(model_params, grads, lr=lr)
+        # stepsize, ls_state = ls.run(
+        #     init_stepsize=init_lr, params=model_params,
+        #     value=loss, grad=grad,
+        #     group_data=group_data
+        # )
+        stepsize = init_lr
+        model_params = grad_update(model_params, grad, lr=max(stepsize, lr_floor))
+        if i % print_every == 0 and verbose == 2:
+            print(i, "\t", loss, "\t", grad_norm, "\t", stepsize)#, "\t", ls_state.done)
         if grad_norm < eps and verbose > 0:
             print("Converged!")
             if verbose == 2:
-                print(i, loss_fn(model_params), grad_norm, np.max(model_params), lr)
+                print(i, "\t", loss, "\t", grad_norm, "\t", stepsize)
             break
 
     if grad_norm > eps and verbose > 0:
         print(f"Failed to converge, gradient norm is {grad_norm}.")
         
-    return model_params, grad_norm, (loss_fn, grad_fn)
+    return model_params, grad_norm, loss_and_grad_fn, ls

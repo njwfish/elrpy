@@ -14,6 +14,18 @@ def standardize(X, axis=0):
     std = np.std(X, axis=axis)
     return (X - mean) / std
 
+def add_intercept(X):
+    """Add intercept to data.
+
+    Args:
+        X: Data to add intercept to.
+
+    Returns:
+        tuple: Data with intercept added and intercept.
+    """
+    intercept = np.ones((X.shape[0], 1))
+    return np.hstack((intercept, X))
+
 def save_group_data(path, group_Xs, group_Ys, group_Ns):
     """Save group data to npz file.
     
