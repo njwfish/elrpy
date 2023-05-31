@@ -10,9 +10,10 @@ def standardize(X, axis=0):
     Returns:
         tuple: Standardized data and mean along axis.
     """
-    mean = np.mean(X, axis=axis)
-    std = np.std(X, axis=axis)
-    return (X - mean) / std
+    # mean = np.mean(X, axis=axis)
+    # std = np.std(X, axis=axis)
+    max_val = np.max(np.abs(X), axis=axis)
+    return X / max_val
 
 def add_intercept(X):
     """Add intercept to data.
