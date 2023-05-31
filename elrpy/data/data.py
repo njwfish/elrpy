@@ -39,7 +39,7 @@ def load(
     npz_path = os.path.join(data_dir, f"{results_name}.{covars_name}.npz")
     if os.path.exists(npz_path) and not force_from_csv:
         if verbose > 0:
-            print("Loading data from npz.\n"
+            print(f"Loading data from {npz_path}.\n"
                   "\tSet force_from_csv=True to reload the data using updated files or group_cols/Y_cols/N_cols.")
         return load_group_data(npz_path)
     

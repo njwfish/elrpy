@@ -1,12 +1,13 @@
+import numpy as onp
+
 import jax
 from jax import numpy as np
-from jaxopt import BacktrackingLineSearch
 from typing import Any, Optional, Tuple, Callable
 
 def get_mapped_loss_and_grad(
         loss_fn: Callable,
         model_fn: Callable,
-        group_data: Tuple[Any, Any, Any],
+        num_groups: int
 ) -> Tuple[Callable, Callable]:
     """Returns a function that computes the gradient of the loss function with
     respect to the model parameters.
@@ -19,20 +20,19 @@ def get_mapped_loss_and_grad(
     Returns:
         tuple: loss function, gradient function
     """
-    _, _, group_Ns = group_data
-    num_groups = len(group_Ns)
-
+    
     def wrapped_loss(model_params, group_X, group_Y, group_N):
         return loss_fn(model_fn(model_params, group_X), group_Y, group_N) / num_groups
 
-    wrapped_loss = jax.jit(jax.value_and_grad(wrapped_loss))
+    wrapped_grad_fn = jax.jit(jax.grad(wrapped_loss))
+    wrapped_loss_and_grad_fn = jax.jit(jax.value_and_grad(wrapped_loss))
 
     def loss_and_grad_fn(model_params, group_data):
         group_Xs, group_Ys, group_Ns = group_data
         num_groups = len(group_Ns)
         group_losses = jax.tree_util.tree_map(
             lambda group_X, group_Y, group_N: 
-            wrapped_loss(model_params, group_X, group_Y, group_N), 
+            wrapped_loss_and_grad_fn(model_params, group_X, group_Y, group_N), 
             group_Xs, group_Ys, group_Ns
         )
         mean_loss, grad = jax.tree_util.tree_reduce(
@@ -41,7 +41,7 @@ def get_mapped_loss_and_grad(
         )
         return mean_loss, grad
 
-    return loss_and_grad_fn
+    return wrapped_grad_fn, wrapped_loss_and_grad_fn, loss_and_grad_fn
 
 
 
@@ -59,19 +59,17 @@ def grad_update(params: np.ndarray, grads: np.ndarray, lr: Optional[float]=1.0) 
     return params - lr * grads
 
 
-def fit(
+def gd(
         loss_fn: Callable, 
         model_fn: Callable,
         model_params: dict, 
         group_data: Tuple[dict],
         maxit: Optional[int] = 500_000, 
-        eps: Optional[float] = 1e-6, 
+        eps: Optional[float] = 1e-8, 
         verbose: Optional[int] = 0, 
         print_every: Optional[int] = 500, 
         init_lr: Optional[float] = 1.0,
-        lr_floor: Optional[float] = 1e-6,
         loss_and_grad_fn = None,
-        ls = None
 ) -> Tuple[dict, float]:
     """Fit a model to data using gradient descent.
 
@@ -88,38 +86,91 @@ def fit(
         fitted model parameters
         gradient norm
     """
-    n_params = np.prod(np.array(model_params.shape))
     if loss_and_grad_fn is None:
-        loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, group_data)
-    if ls is None:
-        ls = BacktrackingLineSearch(
-            fun=loss_and_grad_fn, maxiter=20, 
-            condition="goldstein", decrease_factor=0.8, 
-            jit=False, value_and_grad=True
-        )
+        num_groups = len(group_data[0])
+        _, _, loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, num_groups)
 
     for i in range(maxit):
         loss, grad = loss_and_grad_fn(model_params, group_data)
-        grad_norm = np.sqrt(np.sum(grad**2)) / n_params 
+        grad_norm = np.sqrt(np.sum(grad**2))
         if np.any(np.isnan(grad)):
             print("NaN gradient update, aborting...")
             break
-        # stepsize, ls_state = ls.run(
-        #     init_stepsize=init_lr, params=model_params,
-        #     value=loss, grad=grad,
-        #     group_data=group_data
-        # )
-        stepsize = init_lr
-        model_params = grad_update(model_params, grad, lr=max(stepsize, lr_floor))
+        
+        model_params = grad_update(model_params, grad, lr=init_lr)
         if i % print_every == 0 and verbose == 2:
-            print(i, "\t", loss, "\t", grad_norm, "\t", stepsize)#, "\t", ls_state.done)
+            print(i, "\t", loss, "\t", grad_norm)
         if grad_norm < eps and verbose > 0:
             print("Converged!")
             if verbose == 2:
-                print(i, "\t", loss, "\t", grad_norm, "\t", stepsize)
+                print(i, loss, grad_norm)
             break
 
     if grad_norm > eps and verbose > 0:
         print(f"Failed to converge, gradient norm is {grad_norm}.")
         
-    return model_params, grad_norm, loss_and_grad_fn, ls
+    return model_params, grad_norm
+
+def sgd(
+        loss_fn: Callable, 
+        model_fn: Callable,
+        model_params: dict, 
+        group_data: Tuple[dict],
+        maxit: Optional[int] = 500_000, 
+        eps: Optional[float] = 1e-8, 
+        verbose: Optional[int] = 0, 
+        print_every: Optional[int] = 500, 
+        lr: Optional[float] = 0.5,
+        grad_fn = None,
+        loss_and_grad_fn=None
+) -> Tuple[dict, float]:
+    """Fit a model to data using gradient descent.
+
+    Args:
+        loss_fn: loss function
+        model_fn: model function taking model parameters and data as arguments
+        model_params: model parameters
+        maxit: maximum number of iterations
+        eps: convergence threshold
+        verbose: whether to print progress
+        lr: learning rate
+    
+    Returns:
+        fitted model parameters
+        gradient norm
+    """
+    group_Xs, group_Ys, group_Ns = group_data
+    num_groups = len(group_Ys)
+    
+    if grad_fn is None or loss_and_grad_fn is None:
+        print("Gradient functions not provided, these will be recompiled...")
+        grad_fn, _, loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, num_groups)
+    
+    groups = onp.array(list(group_Ys.keys()))
+    
+    for i in range(maxit):
+        onp.random.shuffle(groups)
+        for g in groups:
+            grads = grad_fn(model_params, group_Xs[g], group_Ys[g], group_Ns[g])
+            if np.any(np.isnan(grads)):
+                print("NaN gradient update, aborting...")
+                return model_params, grad_norm
+            model_params = grad_update(model_params, grads, lr=num_groups * lr)
+        
+
+        if i % print_every == 0 and verbose == 2:
+            loss, grads = loss_and_grad_fn(model_params, group_data)
+            grad_norm = np.sqrt(np.sum(grads**2))
+            print(i, loss, grad_norm)
+        if grad_norm < eps and verbose > 0:
+            print("Converged!")
+            if verbose == 2:
+                loss, grads = loss_and_grad_fn(model_params, group_data)
+                grad_norm = np.sqrt(np.sum(grads**2))
+                print(i, loss, grad_norm)
+            break
+
+    if grad_norm > eps and verbose > 0:
+        print(f"Failed to converge, gradient norm is {grad_norm}.")
+        
+    return model_params, grad_norm
