@@ -76,7 +76,7 @@ def gd(
         tol: Optional[float] = 1e-8, 
         verbose: Optional[int] = 0, 
         print_every: Optional[int] = 500, 
-        init_lr: Optional[float] = 1.0,
+        lr: Optional[float] = 1.0,
         loss_and_grad_fn = None,
         group_weights=None
 ) -> Tuple[dict, float]:
@@ -106,7 +106,7 @@ def gd(
             print("NaN gradient update, aborting...")
             break
         
-        model_params = grad_update(model_params, grad, lr=init_lr)
+        model_params = grad_update(model_params, grad, lr=lr)
         if i % print_every == 0 and verbose == 2:
             print(i, "\t", loss, "\t", grad_norm)
         if grad_norm < tol and verbose > 0:
