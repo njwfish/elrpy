@@ -3,7 +3,23 @@ from jax import numpy as np
 from jax.nn import sigmoid
 
 def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
+    """Simulate data from a normal mixture model with binary outcomes.
 
+    Args:
+        rng (jax.random.PRNGKey): random number generator
+        n (int): number of observations
+        d (int): number of features
+        k (int): number of groups
+        beta (np.ndarray): regression coefficients
+        gamma (np.ndarray): group coefficients
+    
+    Returns:
+        np.ndarray: data matrix
+        np.ndarray: outcome vector
+        dict: group indices
+        dict: group data matrices
+        dict: group outcome vectors
+    """
     rng, next_rng = jax.random.split(rng)
     X = jax.random.normal(next_rng, shape=(n, d))
 
@@ -30,7 +46,25 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
 
 
 def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
+    """Simulate data from a normal mixture model with categorical outcomes.
+    
+    Args:
+        rng (jax.random.PRNGKey): random number generator
+        n (int): number of observations
+        d (int): number of features
+        k (int): number of groups
+        p (int): number of outcomes
+        eps (float): small constant to avoid numerical issues
+        beta (np.ndarray): regression coefficients
+        gamma (np.ndarray): group coefficients
 
+    Returns:
+        np.ndarray: data matrix
+        np.ndarray: outcome vector
+        dict: group indices
+        dict: group data matrices
+        dict: group outcome vectors
+    """
     rng, next_rng = jax.random.split(rng)
     X = jax.random.normal(next_rng, shape=(n, d - 1))
     X = np.hstack([np.ones((n, 1)), X])

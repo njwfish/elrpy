@@ -7,16 +7,15 @@ def get_mapped_loss_and_grad(
         model_fn: Callable,
         num_groups: int
 ) -> Tuple[Callable, Callable]:
-    """Returns a function that computes the gradient of the loss function with
-    respect to the model parameters.
+    """Returns a mapped loss and gradient function for a given loss and model function.
 
     Args:
-        _loss_fn (function): loss function
-        model_fn (function): model function
-        data (tuple): tuple of 
+        loss_fn (Callable): Loss function.
+        model_fn (Callable): Model function.
+        num_groups (int): Number of groups.
 
     Returns:
-        tuple: loss function, gradient function
+        Tuple[Callable, Callable, Callable]: Mapped loss function, mapped gradient function, and loss and gradient function.
     """
     
     def wrapped_loss(model_params, group_X, group_Y, group_N, group_weight=None):
@@ -90,6 +89,8 @@ def gd(
         eps: convergence threshold
         verbose: whether to print progress
         lr: learning rate
+        loss_and_grad_fn: loss and gradient function
+        group_weights: (bootstrap) weights to weight groups by
     
     Returns:
         fitted model parameters
@@ -135,7 +136,7 @@ def sgd(
         loss_and_grad_fn=None,
         group_weights=None
 ) -> Tuple[dict, float]:
-    """Fit a model to data using gradient descent.
+    """Fit a model to data using stochastic gradient descent.
 
     Args:
         loss_fn: loss function
@@ -145,6 +146,9 @@ def sgd(
         eps: convergence threshold
         verbose: whether to print progress
         lr: learning rate
+        grad_fn: gradient function
+        loss_and_grad_fn: loss and gradient function
+        group_weights: (bootstrap) weights to weight groups by
     
     Returns:
         fitted model parameters

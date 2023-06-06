@@ -23,9 +23,21 @@ def lyapunov_binary_loss(p, Y, N, weights=None):
 
 
 def lyapunov_categorical_loss(probs, Y, N, eps=1e-2, weights=None):
+    """Lyapunov Central Limit loss for categorical outcomes.
+
+    Args:
+        probs (np.ndarray): Array of probabilities of shape (n, k).
+        Y (np.ndarray): Array of outcomes of shape (n, k).
+        N (int): Size of group.
+        eps (float): Regularization parameter to ensure positive definiteness of covariance matrix.
+        weights (np.ndarray): Array of weights of shape (n,).
+
+    Returns:
+        float: a normal approximation to the combinatorial log-likelihood.
+    """
     mu = np.sum(probs, axis=0)
-    ep = np.mean(probs, axis=0)
-    Sigma = np.sum(np.einsum('...c,...d->...cd', probs - ep, probs - ep), axis=0) + eps * np.eye(Y.shape[0])
+    demeaned_p = probs - np.mean(probs, axis=0)
+    Sigma = np.sum(np.einsum('...c,...d->...cd', demeaned_p, demeaned_p), axis=0) + eps * np.eye(Y.shape[0])
     logp = multivariate_normal.logpdf(mu, mean=Y, cov=Sigma)
     if weights is not None:
         logp = weights * logp

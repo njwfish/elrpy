@@ -2,13 +2,32 @@ import jax
 import jax.numpy as np
 
 def get_dims(group_data):
+    """Returns the number of groups, the number of covariates, and the number of outcomes.
+    
+    Args:
+        group_data (tuple): tuple of group covariates, group outcomes, and group sizes
+        
+    Returns:
+        tuple: number of groups, number of covariates, and number of outcomes
+    """
     group_Xs, group_Ys, group_Ns = group_data
-    k = len(group_Ns)
-    d = next(iter(group_Xs.values())).shape[1]
-    p = next(iter(group_Ys.values())).shape[0]
-    return k, d, p
+    num_groups = len(group_Ns)
+    dim = next(iter(group_Xs.values())).shape[1]
+    num_outcomes = next(iter(group_Ys.values())).shape[0]
+    return num_groups, dim, num_outcomes
 
-def get_bootstrap_weights(rng, group_data, num_boots, estimate_on_all=True):
+def get_bootstrap_weights(rng, group_data, num_boots, estimate_on_all=False):
+    """Returns bootstrap weights for each group.
+    
+    Args:
+        rng (jax.random.PRNGKey): random number generator
+        group_data (tuple): tuple of group covariates, group outcomes, and group sizes
+        num_boots (int): number of bootstrap samples
+        estimate_on_all (bool): whether to include replicate estimated on all data, e.g. all ones
+        
+    Returns:
+        dict: dictionary of bootstrap weights for each group
+    """
     num_boots -= estimate_on_all
     num_groups = len(group_data[0])
     group_idx = jax.random.choice(rng, num_groups, shape=(num_groups, num_boots))
