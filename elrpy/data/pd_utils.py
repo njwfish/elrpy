@@ -44,8 +44,7 @@ def drop_constant_cols(df: pd.DataFrame):
 
 def transform_covars(
         covars: pd.DataFrame, 
-        pd_transforms: Optional[Iterable[Callable]]=None, 
-        np_transforms: Optional[Iterable[Callable]]=None
+        pd_transforms: Optional[Iterable[Callable]]=None
 ) -> np.ndarray:
     """Transform covariates into a numpy array.
 
@@ -66,18 +65,16 @@ def transform_covars(
         pd_transforms = [
             drop_non_numeric_cols, fill_na, drop_constant_cols
         ]
-    if np_transforms is None:
-        np_transforms = [
-            standardize, add_intercept
-        ]
     
     for transform in pd_transforms:
         covars = transform(covars)
     covars = covars[[col for col in covars.columns if 'geo' not in col]]
+    
     X = covars.values
-    for transform in np_transforms:
-        X = transform(X)
-    return X
+    X, scale = standardize(X)
+    X = add_intercept(X)
+    
+    return X, covars.columns, scale
 
 
 def  load_from_csv(
@@ -163,7 +160,7 @@ def transform_from_df(
     # transform covars
     if verbose > 0:
         print("Transforming covars")
-    X = transform_covars(covars)
+    X, columns, scale = transform_covars(covars)
 
     # transform to dicts
     if verbose > 0:
@@ -189,5 +186,5 @@ def transform_from_df(
         individual_frame_Ns, group_frame_Ys, group_frame_Ns
     )
 
-    return individual_frame_Xs, individual_frame_Ys, individual_frame_Ns   
+    return individual_frame_Xs, individual_frame_Ys, individual_frame_Ns, columns, scale
     

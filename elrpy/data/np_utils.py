@@ -13,7 +13,7 @@ def standardize(X, axis=0):
     # mean = np.mean(X, axis=axis)
     # std = np.std(X, axis=axis)
     max_val = np.max(np.abs(X), axis=axis)
-    return X / max_val
+    return X / max_val, max_val
 
 def add_intercept(X):
     """Add intercept to data.
@@ -26,6 +26,18 @@ def add_intercept(X):
     """
     intercept = np.ones((X.shape[0], 1))
     return np.hstack((intercept, X))
+
+def save_transform_data(path, columns, scale):
+    """Save transform data to npz file.
+    
+    Args:
+        path: Path to save npz file.
+        columns: Column names.
+        scale: Scale of covariates.
+    """
+    np.savez(
+        path, columns=columns, scale=scale
+    )
 
 def save_group_data(path, group_Xs, group_Ys, group_Ns):
     """Save group data to npz file.
