@@ -1,5 +1,5 @@
 import os
-from elrpy.data.pd_utils import load_from_long_csv, transform_from_df, transform_covars
+from elrpy.data.pd_utils import load_from_long_csv, transform_from_df
 from elrpy.data.np_utils import save_transform_data, save_group_data, load_group_data
 
 from typing import Optional, Iterable, Tuple 
@@ -62,38 +62,7 @@ def load(
         if verbose > 0:
             print("Saving data to npz.")
         save_transform_data(os.path.join(data_dir, f"transforms.npz"), columns, scale)
-        save_group_data(npz_path, group_Xs, group_Ys, group_Ns, columns=columns, scale=scale)
+        save_group_data(npz_path, group_Xs, group_Ys, group_Ns)
     
     return group_Xs, group_Ys, group_Ns
 
-def save_transforms(
-    covars_path: str, 
-    results_path: str,
-    covars_group_col: Optional[str]="group_id", 
-    results_group_col: Optional[str]="group_id",
-    pivot_col: Optional[str]=None,
-    Y_col: Optional[str]=None, 
-    N_col: Optional[str]=None,
-    save_npz: Optional[bool]=True,
-    force_from_csv: Optional[bool]=False,
-    verbose: Optional[bool]=1
-):
-    """Save transform data to npz file.
-    
-    Args:
-        path: Path to save npz file.
-        columns: Column names.
-        scale: Scale of covariates.
-    """
-    data_dir = os.path.dirname(covars_path)
-
-    _, covars, _, _, _ = load_from_long_csv(
-        covars_path, results_path, 
-        covars_group_col=covars_group_col, results_group_col=results_group_col,
-        Y_col=Y_col, N_col=N_col, pivot_col=pivot_col
-    )
-
-    _, columns, scale = transform_covars(covars)
-    save_transform_data(os.path.join(data_dir, f"transforms.npz"), columns, scale)
-
-    

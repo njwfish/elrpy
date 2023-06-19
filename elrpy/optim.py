@@ -2,68 +2,59 @@ import jax
 from jax import numpy as np
 from typing import Any, Optional, Tuple, Callable
 
-def get_mapped_loss_and_grad(
-        loss_fn: Callable,
-        model_fn: Callable,
-        num_groups: int
-) -> Tuple[Callable, Callable]:
-    """Returns a mapped loss and gradient function for a given loss and model function.
 
-    Args:
-        loss_fn (Callable): Loss function.
-        model_fn (Callable): Model function.
-        num_groups (int): Number of groups.
+@jax.jit
+def reduce_sum(tree):
+    return jax.tree_util.tree_reduce(
+        lambda x, y: x + y if isinstance(x, np.ndarray) else [xi + yi for (xi, yi) in zip(x, y)], 
+        tree, is_leaf=lambda x: not isinstance(x, dict)
+    )
 
-    Returns:
-        Tuple[Callable, Callable, Callable]: Mapped loss function, mapped gradient function, and loss and gradient function.
-    """
-    
-    def wrapped_loss(model_params, group_X, group_Y, group_N, group_weight=None):
-        return loss_fn(model_fn(model_params, group_X), group_Y, group_N, weights=group_weight) / num_groups
 
-    wrapped_grad_fn = jax.jit(jax.grad(wrapped_loss))
-    wrapped_loss_and_grad_fn = jax.jit(jax.value_and_grad(wrapped_loss))
-
-    def loss_and_grad_fn(model_params, group_data, group_weights=None):
-        group_Xs, group_Ys, group_Ns = group_data
-        if group_weights is not None:
-            group_losses = jax.tree_util.tree_map(
-                lambda group_X, group_Y, group_N, group_weight: 
-                wrapped_loss_and_grad_fn(
-                    model_params, group_X, group_Y, group_N, group_weight=group_weight
-                ), 
-                group_Xs, group_Ys, group_Ns, group_weights
-            )
-        else:
-            group_losses = jax.tree_util.tree_map(
-                lambda group_X, group_Y, group_N: 
-                wrapped_loss_and_grad_fn(
-                    model_params, group_X, group_Y, group_N
-                ), 
-                group_Xs, group_Ys, group_Ns
-            )
-        mean_loss, grad = jax.tree_util.tree_reduce(
-            lambda x, y: (x[0] + y[0], x[1] + y[1]), group_losses, 
-            is_leaf=lambda x: not isinstance(x, dict)
+def get_mapped_fn(fn):
+    def mapped_fn(model_params, args):
+        group_values = jax.tree_util.tree_map(
+            lambda *args: fn(model_params, *args), *args
         )
-        return mean_loss, grad
-
-    return wrapped_grad_fn, wrapped_loss_and_grad_fn, loss_and_grad_fn
-
+        return reduce_sum(group_values)
+    return mapped_fn
 
 
-def grad_update(params: np.ndarray, grads: np.ndarray, lr: Optional[float]=1.0) -> dict:
-    """Update parameters using gradient descent.
+def get_wrapped_loss(loss_fn, model_fn, num_groups):
+    def wrapped_loss(model_params, group_X, group_Y, group_N, group_weight=None):
+        return loss_fn(
+            model_fn(model_params, group_X), group_Y, group_N, weights=group_weight
+        ) / num_groups
     
-    Args:
-        params: dict of parameters
-        grads: dict of gradients
-        lr: learning rate
-        
-    Returns:
-        updated parameters
-    """
-    return params - lr * grads
+    return wrapped_loss
+
+def clip_inv_prod(eps, grad, u, v):
+    inv_hess = v @ np.diag(1 / np.maximum(u, eps)) @ v.T
+    next_cg = inv_hess @ grad
+    return next_cg
+
+clip_inv_prod = jax.vmap(clip_inv_prod, in_axes=(0, None, None, None))
+
+def get_cg_fn(grad_fn, hess_fn):
+    def cg_fn(params, *args):
+        loss, grad = grad_fn(params, *args) 
+        hess = hess_fn(params, *args)
+        return loss, np.linalg.inv(hess) @ grad
+    return cg_fn
+
+def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4, num_clip=30):
+    def cg_fn(params, *args, start_clip=start_clip, stop_clip=stop_clip, num_clip=num_clip):
+        _, grad = grad_fn(params, *args) 
+        hess = hess_fn(params, *args)
+        u, v = np.linalg.eigh(hess)
+        eps = np.logspace(
+            np.log(start_clip), np.log(stop_clip), num_clip, base=np.exp(1)
+        )
+        cg = clip_inv_prod(eps, grad, u, v).T
+        losses = loss_fn(params[:, None] - cg, *args)
+        min_idx = np.argmin(losses)
+        return losses[min_idx], cg[:, min_idx]
+    return cg_fn
 
 
 def gd(
@@ -76,7 +67,7 @@ def gd(
         verbose: Optional[int] = 0, 
         print_every: Optional[int] = 500, 
         lr: Optional[float] = 1.0,
-        loss_and_grad_fn = None,
+        mapped_loss_and_dir_fn = None,
         group_weights=None
 ) -> Tuple[dict, float]:
     """Fit a model to data using gradient descent.
@@ -96,18 +87,25 @@ def gd(
         fitted model parameters
         gradient norm
     """
-    if loss_and_grad_fn is None:
+    if mapped_loss_and_dir_fn is None:
+        print("Gradient functions not provided, these will be recompiled...")
         num_groups = len(group_data[0])
-        _, _, loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, num_groups)
+        loss_fn = get_wrapped_loss(loss_fn, model_fn, num_groups)
+        grad_fn = jax.jit(jax.value_and_grad(loss_fn))
+        mapped_loss_and_dir_fn = get_mapped_fn(grad_fn)
+
+    if group_weights is not None:
+        group_data = (group_data[0], group_data[1], group_data[2], group_weights)
 
     for i in range(maxit):
-        loss, grad = loss_and_grad_fn(model_params, group_data, group_weights=group_weights)
+        loss, grad = mapped_loss_and_dir_fn(model_params, group_data)
         grad_norm = np.sqrt(np.sum(grad**2))
         if np.any(np.isnan(grad)):
             print("NaN gradient update, aborting...")
             break
+
+        model_params -= lr * grad
         
-        model_params = grad_update(model_params, grad, lr=lr)
         if i % print_every == 0 and verbose == 2:
             print(i, "\t", loss, "\t", grad_norm)
         if grad_norm < tol and verbose > 0:
@@ -132,8 +130,8 @@ def sgd(
         verbose: Optional[int] = 0, 
         print_every: Optional[int] = 500, 
         lr: Optional[float] = 0.5,
-        grad_fn = None,
-        loss_and_grad_fn=None,
+        dir_fn = None,
+        mapped_loss_and_dir_fn=None,
         group_weights=None
 ) -> Tuple[dict, float]:
     """Fit a model to data using stochastic gradient descent.
@@ -147,7 +145,7 @@ def sgd(
         verbose: whether to print progress
         lr: learning rate
         grad_fn: gradient function
-        loss_and_grad_fn: loss and gradient function
+        mapped_loss_and_dir_fn: loss and gradient function
         group_weights: (bootstrap) weights to weight groups by
     
     Returns:
@@ -157,9 +155,15 @@ def sgd(
     group_Xs, group_Ys, group_Ns = group_data
     num_groups = len(group_Ys)
     
-    if grad_fn is None or loss_and_grad_fn is None:
+    if dir_fn is None or mapped_loss_and_dir_fn is None:
         print("Gradient functions not provided, these will be recompiled...")
-        grad_fn, _, loss_and_grad_fn = get_mapped_loss_and_grad(loss_fn, model_fn, num_groups)
+        num_groups = len(group_data[0])
+        loss_fn = get_wrapped_loss(loss_fn, model_fn, num_groups)
+        dir_fn = jax.jit(jax.value_and_grad(loss_fn))
+        mapped_loss_and_dir_fn = get_mapped_fn(dir_fn)
+
+    if group_weights is not None:
+        group_data = (group_data[0], group_data[1], group_data[2], group_weights)
     
     groups = list(group_Ys.keys())
     
@@ -167,21 +171,20 @@ def sgd(
         rng, next_rng = jax.random.split(rng)
         groups = [groups[i] for i in jax.random.permutation(next_rng, len(groups))]
         for g in groups:
-            group_weight = group_weights[g] if group_weights is not None else None
-            grads = grad_fn(model_params, group_Xs[g], group_Ys[g], group_Ns[g], group_weight=group_weight)
+            grads = dir_fn(model_params, *[dat[g] for dat in group_data])
             if np.any(np.isnan(grads)):
                 print("NaN gradient update, aborting...")
                 return model_params, np.inf
-            model_params = grad_update(model_params, grads, lr=num_groups * lr)
+            model_params -= num_groups * lr * grads
         
         if i % print_every == 0 and verbose == 2:
-            loss, grads = loss_and_grad_fn(model_params, group_data)
+            loss, grads = mapped_loss_and_dir_fn(model_params, group_data)
             grad_norm = np.sqrt(np.sum(grads**2))
             print(i, loss, grad_norm)
         if grad_norm < tol and verbose > 0:
             print("Converged!")
             if verbose == 2:
-                loss, grads = loss_and_grad_fn(model_params, group_data)
+                loss, grads = mapped_loss_and_dir_fn(model_params, group_data)
                 grad_norm = np.sqrt(np.sum(grads**2))
                 print(i, loss, grad_norm)
             return model_params, grad_norm

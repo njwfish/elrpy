@@ -1,6 +1,11 @@
 import jax
 import jax.numpy as np
 
+def get_mean_fn(fn):
+    def mean_fn(*args, **kwargs):
+        return np.mean(fn(*args, **kwargs))
+    return mean_fn
+
 def get_dims(group_data):
     """Returns the number of groups, the number of covariates, and the number of outcomes.
     

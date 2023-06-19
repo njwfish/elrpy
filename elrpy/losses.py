@@ -19,7 +19,7 @@ def lyapunov_binary_loss(p, Y, N, weights=None):
     logp = 1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
     if weights is not None:
         logp = weights * logp
-    return -np.mean(logp)
+    return -logp
 
 
 def lyapunov_categorical_loss(probs, Y, N, eps=1e-2, weights=None):
@@ -41,4 +41,6 @@ def lyapunov_categorical_loss(probs, Y, N, eps=1e-2, weights=None):
     logp = multivariate_normal.logpdf(mu, mean=Y, cov=Sigma)
     if weights is not None:
         logp = weights * logp
-    return -np.mean(logp)
+    return -logp
+
+
