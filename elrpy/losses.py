@@ -44,3 +44,29 @@ def lyapunov_categorical_loss(probs, Y, N, eps=1e-2, weights=None):
     return -logp
 
 
+def lyapunov_three_category_loss(probs, Y, N, eps=1e-2, weights=None):
+    """Lyapunov Central Limit loss for categorical outcomes.
+
+    Args:
+        probs (np.ndarray): Array of probabilities of shape (n, k).
+        Y (np.ndarray): Array of outcomes of shape (n, k).
+        N (int): Size of group.
+        eps (float): Regularization parameter to ensure positive definiteness of covariance matrix.
+        weights (np.ndarray): Array of weights of shape (n,).
+
+    Returns:
+        float: a normal approximation to the combinatorial log-likelihood.
+    """
+    err = Y - np.sum(probs, axis=0)
+    demeaned_probs = probs - np.mean(probs, axis=0)
+    a, c = np.sum(demeaned_probs[..., 0]**2), np.sum(demeaned_probs[..., 1]**2)
+    b = np.sum(demeaned_probs[..., 0] * demeaned_probs[..., 1])
+
+    det = a * c - b**2
+    logdet = -1/2 * np.log(det) 
+    quadform = - 1 / (2 * det) * (a * err[1]**2 + c * err[0]**2 - 2 * b * err[0] * err[1])
+    logp = -np.log(2 * np.pi) + logdet + quadform
+
+    if weights is not None:
+        logp = weights * logp
+    return -logp
