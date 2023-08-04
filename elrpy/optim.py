@@ -42,7 +42,7 @@ def clip_inv_prod(eps, grad, u, v):
 eigh =  jax.jit(np.linalg.eigh)
 clip_inv_prod = jax.vmap(clip_inv_prod, in_axes=(0, None, None, None))
 
-def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4, num_clip=30):
+def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=5e-1, stop_clip=1e-4, num_clip=30):
     eps = np.logspace(
         np.log(start_clip), np.log(stop_clip), num_clip, base=np.exp(1)
     )
