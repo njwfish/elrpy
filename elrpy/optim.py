@@ -62,10 +62,12 @@ def gd(
         model_fn: Callable,
         model_params: dict, 
         group_data: Tuple[dict],
-        maxit: Optional[int] = 500_000, 
+        maxit: Optional[int] = 1_000, 
         tol: Optional[float] = 1e-8, 
         verbose: Optional[int] = 0, 
-        print_every: Optional[int] = 500, 
+        print_every: Optional[int] = 50, 
+        save_every: Optional[int] = 50,
+        save_dir: Optional[str] = None,
         lr: Optional[float] = 1.0,
         mapped_loss_and_dir_fn = None,
         group_weights=None
@@ -113,81 +115,12 @@ def gd(
             if verbose == 2:
                 print(i, loss, grad_norm)
             break
+        if i % save_every == 0 and save_dir is not None:
+            np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm)
 
     if grad_norm > tol and verbose > 0:
         print(f"Failed to converge, gradient norm is {grad_norm}.")
+    if save_dir is not None:
+        np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm)
         
-    return model_params, grad_norm
-
-def sgd(
-        rng,
-        loss_fn: Callable, 
-        model_fn: Callable,
-        model_params: dict, 
-        group_data: Tuple[dict],
-        maxit: Optional[int] = 500_000, 
-        tol: Optional[float] = 1e-8, 
-        verbose: Optional[int] = 0, 
-        print_every: Optional[int] = 500, 
-        lr: Optional[float] = 0.5,
-        dir_fn = None,
-        mapped_loss_and_dir_fn=None,
-        group_weights=None
-) -> Tuple[dict, float]:
-    """Fit a model to data using stochastic gradient descent.
-
-    Args:
-        loss_fn: loss function
-        model_fn: model function taking model parameters and data as arguments
-        model_params: model parameters
-        maxit: maximum number of iterations
-        eps: convergence threshold
-        verbose: whether to print progress
-        lr: learning rate
-        grad_fn: gradient function
-        mapped_loss_and_dir_fn: loss and gradient function
-        group_weights: (bootstrap) weights to weight groups by
-    
-    Returns:
-        fitted model parameters
-        gradient norm
-    """
-    group_Xs, group_Ys, group_Ns = group_data
-    num_groups = len(group_Ys)
-    
-    if dir_fn is None or mapped_loss_and_dir_fn is None:
-        print("Gradient functions not provided, these will be recompiled...")
-        num_groups = len(group_data[0])
-        loss_fn = get_wrapped_loss(loss_fn, model_fn, num_groups)
-        dir_fn = jax.jit(jax.value_and_grad(loss_fn))
-        mapped_loss_and_dir_fn = get_mapped_fn(dir_fn)
-
-    if group_weights is not None:
-        group_data = (group_data[0], group_data[1], group_data[2], group_weights)
-    
-    groups = list(group_Ys.keys())
-    
-    for i in range(maxit):
-        rng, next_rng = jax.random.split(rng)
-        groups = [groups[i] for i in jax.random.permutation(next_rng, len(groups))]
-        for g in groups:
-            grads = dir_fn(model_params, *[dat[g] for dat in group_data])
-            if np.any(np.isnan(grads)):
-                print("NaN gradient update, aborting...")
-                return model_params, np.inf
-            model_params -= num_groups * lr * grads
-        
-        if i % print_every == 0 and verbose == 2:
-            loss, grads = mapped_loss_and_dir_fn(model_params, group_data)
-            grad_norm = np.sqrt(np.sum(grads**2))
-            print(i, loss, grad_norm)
-        if grad_norm < tol and verbose > 0:
-            print("Converged!")
-            if verbose == 2:
-                loss, grads = mapped_loss_and_dir_fn(model_params, group_data)
-                grad_norm = np.sqrt(np.sum(grads**2))
-                print(i, loss, grad_norm)
-            return model_params, grad_norm
-
-    print(f"Failed to converge, gradient norm is {grad_norm}.")
     return model_params, grad_norm
