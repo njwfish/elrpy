@@ -3,7 +3,7 @@ from jax import numpy as np
 from typing import Any, Optional, Tuple, Callable
 
 
-@jax.jit
+# @jax.jit
 def reduce_sum(tree):
     return jax.tree_util.tree_reduce(
         lambda x, y: x + y if isinstance(x, np.ndarray) else [xi + yi for (xi, yi) in zip(x, y)], 

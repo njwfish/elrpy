@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+=======
+import faulthandler
+
+faulthandler.enable()
+
+>>>>>>> ce76ab2b5b647831fcb0333c335b0375fb38c56a
 import os
 
 from elrpy.data.data import load
