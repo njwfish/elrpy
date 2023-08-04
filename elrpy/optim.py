@@ -3,10 +3,9 @@ from jax import numpy as np
 from typing import Any, Optional, Tuple, Callable
 
 
-# @jax.jit
 def reduce_sum(tree):
     return jax.tree_util.tree_reduce(
-        lambda x, y: x + y if isinstance(x, np.ndarray) else [xi + yi for (xi, yi) in zip(x, y)], 
+        jax.jit(lambda x, y: x + y if isinstance(x, np.ndarray) else [xi + yi for (xi, yi) in zip(x, y)]), 
         tree, is_leaf=lambda x: not isinstance(x, dict)
     )
 
@@ -28,24 +27,12 @@ def get_wrapped_loss(loss_fn, model_fn, num_groups):
     
     return wrapped_loss
 
-def get_outer_loss(loss_and_grad_fn):
-    def outer_loss(model_params, group_X, group_Y, group_N, group_weight=None):
-        loss, grad = loss_and_grad_fn(model_params, group_X, group_Y, group_N, group_weight=group_weight)
-        return loss, grad, np.outer(grad, grad)
-    return outer_loss
-
 def get_cg_fn(grad_fn, hess_fn):
     def cg_fn(params, *args):
         loss, grad = grad_fn(params, *args) 
         hess = hess_fn(params, *args)
         return loss, np.linalg.solve(hess, grad)
     return cg_fn
-
-def get_outer_cg_fn(loss_grad_outer_fn):
-    def outer_cg_fn(params, *args):
-        loss, grad, approx_hess = loss_grad_outer_fn(params, *args)
-        return loss, np.linalg.solve(approx_hess, grad)
-    return outer_cg_fn
 
 def clip_inv_prod(eps, grad, u, v):
     inv_hess = v @ np.diag(1 / np.maximum(u, eps)) @ v.T
@@ -56,13 +43,13 @@ eigh =  jax.jit(np.linalg.eigh)
 clip_inv_prod = jax.vmap(clip_inv_prod, in_axes=(0, None, None, None))
 
 def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4, num_clip=30):
-    def cg_fn(params, *args, start_clip=start_clip, stop_clip=stop_clip, num_clip=num_clip):
+    eps = np.logspace(
+        np.log(start_clip), np.log(stop_clip), num_clip, base=np.exp(1)
+    )
+    def cg_fn(params, *args):
         _, grad = grad_fn(params, *args) 
         hess = hess_fn(params, *args)
         u, v = eigh(hess)
-        eps = np.logspace(
-            np.log(start_clip), np.log(stop_clip), num_clip, base=np.exp(1)
-        )
         cg = clip_inv_prod(eps, grad, u, v).T
         losses = loss_fn(params[:, None] - cg, *args)
         min_idx = np.argmin(losses)
@@ -129,11 +116,11 @@ def gd(
                 print(i, loss, grad_norm)
             break
         if i % save_every == 0 and save_dir is not None:
-            np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm)
+            np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
 
     if grad_norm > tol and verbose > 0:
         print(f"Failed to converge, gradient norm is {grad_norm}.")
     if save_dir is not None:
-        np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm)
+        np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
         
     return model_params, grad_norm
