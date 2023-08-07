@@ -9,7 +9,6 @@ from elrpy.models import init_binary
 from elrpy.data.data import load
 
 import jax
-import jax.numpy as np
 
 import argparse
 parser = argparse.ArgumentParser(description='Pull data from voterfile/precinct results.')
@@ -35,8 +34,9 @@ results_path = f"{save_dir}/results.csv.zip"
 
 group_data = load(
 	covars_path, results_path,
-	Y_col="votes", N_col="two_way_votes", pivot_col=["office", "party"]
+	Y_col="votes", N_col="total_votes", pivot_col=["office", "party"]
 )
+group_data = group_data[0], jax.tree_map(lambda x: x[:-1], group_data[1]), group_data[2]
 
 num_groups, dim, num_outcomes = get_dims(group_data)
 model_fn, model_params = init_binary(dim)
@@ -51,9 +51,16 @@ mapped_hess_fn = get_mapped_fn(jax.jit(hess_fn))
 
 cg_fn = get_clipped_cg_fn(mapped_loss_fn, mapped_loss_and_grad_fn, mapped_hess_fn)
 
+binary_gd_params, gd_norm = gd(
+    lyapunov_binary_loss, model_fn, model_params, group_data, 
+    verbose=2, lr=1e-4, print_every=10, tol=1e-3,
+    maxit=100, mapped_loss_and_dir_fn=mapped_loss_and_grad_fn,
+    save_dir=save_dir
+)
+
 binary_params, gd_norm = gd(
     lyapunov_binary_loss, model_fn, model_params, group_data, 
-    verbose=2, lr=1., print_every=1, tol=1e-3,
+    verbose=2, lr=1, print_every=1, tol=1e-3,
     maxit=maxit, mapped_loss_and_dir_fn=cg_fn,
     save_dir=save_dir
 )

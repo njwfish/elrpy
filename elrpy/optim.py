@@ -42,7 +42,7 @@ def clip_inv_prod(eps, grad, u, v):
 eigh =  jax.jit(np.linalg.eigh)
 clip_inv_prod = jax.vmap(clip_inv_prod, in_axes=(0, None, None, None))
 
-def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=5e-1, stop_clip=1e-4, num_clip=30):
+def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4, num_clip=30):
     eps = np.logspace(
         np.log(start_clip), np.log(stop_clip), num_clip, base=np.exp(1)
     )
@@ -53,7 +53,7 @@ def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=5e-1, stop_clip=1e-4
         cg = clip_inv_prod(eps, grad, u, v).T
         losses = loss_fn(params[:, None] - cg, *args)
         min_idx = np.argmin(losses)
-        return losses[min_idx], cg[:, min_idx]
+        return losses[min_idx], cg[:, min_idx], np.linalg.norm(grad)
     return cg_fn
 
 
@@ -100,13 +100,18 @@ def gd(
         group_data = (group_data[0], group_data[1], group_data[2], group_weights)
 
     for i in range(maxit):
-        loss, grad = mapped_loss_and_dir_fn(model_params, group_data)
-        grad_norm = np.sqrt(np.sum(grad**2))
+        out = mapped_loss_and_dir_fn(model_params, group_data)
+        if len(out) == 2:
+            loss, grad = out
+            grad_norm = np.linalg.norm(grad)
+        elif len(out) == 3:
+            loss, grad, grad_norm = out
+        else:
+            raise ValueError("Unexpected number of outputs from mapped loss and gradient function.")
+
         if np.any(np.isnan(grad)):
             print("NaN gradient update, aborting...")
             break
-
-        model_params -= lr * grad
         
         if i % print_every == 0 and verbose == 2:
             print(i, "\t", loss, "\t", grad_norm)
@@ -115,6 +120,8 @@ def gd(
             if verbose == 2:
                 print(i, loss, grad_norm)
             break
+
+        model_params -= lr * grad
         if i % save_every == 0 and save_dir is not None:
             np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
 
@@ -124,3 +131,5 @@ def gd(
         np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
         
     return model_params, grad_norm
+
+

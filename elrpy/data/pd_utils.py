@@ -126,6 +126,7 @@ def  load_from_long_csv(
         covars_path, results_path, 
         covars_group_col=covars_group_col, results_group_col=results_group_col
     )
+    print(results)
     results = results.pivot(columns=pivot_col)
     
     Y_cols = [col for col in results.columns if Y_col in col and N_col not in col]
