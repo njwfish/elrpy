@@ -14,7 +14,7 @@ def binary_model(model_params, X):
     """
     return sigmoid(np.tensordot(X, model_params, axes=1))
 
-def init_binary(d, rng=None):
+def init_binary(d):
     """Initializes the model parameters for the binary model.
 
     Args:
@@ -26,8 +26,7 @@ def init_binary(d, rng=None):
     Returns:
         tuple: model and model parameters
     """
-    beta = jax.random.normal(rng, shape=(d,)) if rng is not None else np.zeros((d,))
-    return binary_model, beta
+    return binary_model, np.zeros((d,))
 
 def categorical_model(model_params, X):
     """Returns the softmax of the logits of the linear model.
@@ -46,7 +45,7 @@ def categorical_model(model_params, X):
     logits = np.concatenate([logits, np.zeros((*logits.shape[:-1], 1))], axis=-1)
     return softmax(logits)[..., :-1]
 
-def init_categorical(d, p, rng=None):
+def init_categorical(d, p):
     """Initializes the model parameters for the categorical model.
 
     Args:
@@ -59,6 +58,4 @@ def init_categorical(d, p, rng=None):
     Returns:
         tuple: model and model parameters
     """
-    p = p - 1
-    beta = jax.random.normal(rng, shape=(d * p,)) if rng is not None else np.zeros((d * p,))
-    return categorical_model, beta
+    return categorical_model, np.zeros((d * (p - 1),))
