@@ -53,6 +53,7 @@ def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4
         cg = clip_inv_prod(eps, grad, u, v).T
         losses = loss_fn(params[:, None] - cg, *args)
         min_idx = np.argmin(losses)
+        print(grad @ cg[:, min_idx], np.linalg.norm(grad))
         return losses[min_idx], cg[:, min_idx], np.linalg.norm(grad)
     return cg_fn
 

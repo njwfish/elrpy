@@ -3,7 +3,7 @@ from jax import numpy as np
 from jax.scipy.stats import multivariate_normal
 
 
-def lyapunov_binary_loss(p, Y, N, weights=None):
+def lyapunov_binary_loss(p, Y, N, weights=None, eps=1e-6):
     """Lyapunov Central Limit loss for binary outcomes.
     
     Args:
@@ -14,7 +14,7 @@ def lyapunov_binary_loss(p, Y, N, weights=None):
     Returns:
         float: a normal approximation to the combinatorial log-likelihood.
     """
-    phi2 = np.sum(p * (1 - p), axis=0)
+    phi2 = np.maximum(np.sum(p * (1 - p), axis=0), eps)
     mu = np.sum(p, axis=0)
     logp = 1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
     if weights is not None:
