@@ -34,9 +34,9 @@ results_path = f"{save_dir}/results.csv.zip"
 
 group_data = load(
 	covars_path, results_path,
-	Y_col="votes", N_col="two_way", pivot_col=["office", "party"]
+	Y_col="votes", N_col="total_votes", pivot_col=["office", "party"]
 )
-# group_data = group_data[0], jax.tree_map(lambda x: x[:-1], group_data[1]), group_data[2]
+group_data = group_data[0], jax.tree_map(lambda x: x[:-1], group_data[1]), group_data[2]
 
 num_groups, dim, num_outcomes = get_dims(group_data)
 model_fn, model_params = init_binary(dim)

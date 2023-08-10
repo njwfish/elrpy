@@ -71,7 +71,8 @@ def gd(
         save_dir: Optional[str] = None,
         lr: Optional[float] = 1.0,
         mapped_loss_and_dir_fn = None,
-        group_weights=None
+        group_weights=None,
+        keep_history=False
 ) -> Tuple[dict, float]:
     """Fit a model to data using gradient descent.
 
@@ -100,6 +101,9 @@ def gd(
     if group_weights is not None:
         group_data = (group_data[0], group_data[1], group_data[2], group_weights)
 
+    if keep_history:
+        history = []
+
     for i in range(maxit):
         out = mapped_loss_and_dir_fn(model_params, group_data)
         if len(out) == 2:
@@ -123,6 +127,8 @@ def gd(
             break
 
         model_params -= lr * grad
+        if keep_history:
+            history.append((model_params, loss, grad_norm))
         if i % save_every == 0 and save_dir is not None:
             np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
 
@@ -130,7 +136,7 @@ def gd(
         print(f"Failed to converge, gradient norm is {grad_norm}.")
     if save_dir is not None:
         np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
-        
-    return model_params, grad_norm
+    
+    return (model_params, grad_norm, history) if keep_history else (model_params, grad_norm)
 
 
