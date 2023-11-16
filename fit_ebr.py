@@ -24,10 +24,18 @@ save_dir = f"data/{office.replace(' ', '_').lower()}/{state.lower()}/{year}"
 if not os.path.exists(save_dir):
 	os.makedirs(save_dir)
 
+# this is a file containing the covariates and a group id, which is assumed to be 'group_id' by default
+# usually this will come from the voterfile. right now we assume all the processing is already done 
+# in the data on the csv so we just load it
 covars_path = f"{save_dir}/covars.csv.zip"
+# this is a file containing the results and a group id, which is assumed to be 'group_id' by default
+# each row is a group, and there should be an outcome 'y' and a number of observations 'n' for each group
 results_path = f"{save_dir}/results.csv.zip"
 
-group_data = load(covars_path, results_path)
+group_data = load(
+	covars_path, results_path, 
+	covars_group_col='group_id', results_group_col='group_id'
+)
 model_fn, model_params = init_binary(group_data)
 
 
