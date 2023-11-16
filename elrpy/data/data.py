@@ -32,7 +32,7 @@ def load(
         tuple: individual_frame_Xs, individual_frame_Ns, individual_frame_Ys, group_frame_Ns
     """
     
-    data_dir = os.path.dirname(covars_path)
+    data_dir = os.path.dirname(results_path)
     covars_name = os.path.basename(covars_path).split(".")[0]
     results_name = os.path.basename(results_path).split(".")[0]
     npz_path = os.path.join(data_dir, f"{results_name}.{covars_name}.npz")
