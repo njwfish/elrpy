@@ -8,7 +8,7 @@ from elrpy.models import init_binary
 from elrpy.data.data import load
 
 import argparse
-parser = argparse.ArgumentParser(description='Pull data from voterfile/precinct results.')
+parser = argparse.ArgumentParser(description='Fit a logistic regression using ecological outcome data.')
 parser.add_argument('-s','--state', help='State to pull voters for', type=str,required=True)
 parser.add_argument('-y','--year',help='Year to pull voters for', type=int, required=True)
 
