@@ -1,2 +1,2 @@
-A lightweight package for individual level inference in elections backed 
+A lightweight package for ecological logistic regression backed 
 by jax.
