@@ -3,6 +3,8 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
+from collections import defaultdict
+
 from typing import Optional, Callable, Iterable, Tuple
 
 from elrpy.data.np_utils import *
@@ -68,20 +70,35 @@ def transform_covars(
     
     for transform in pd_transforms:
         covars = transform(covars)
-    covars = covars[[col for col in covars.columns if 'geo' not in col]]
-    
+    covars = covars[[col for col in covars.columns if 'geo' not in col and col[:5] != 'meta_']]
+
+    cols = covars.columns
+    dd = defaultdict(list)
+    for c in cols:
+        if "_var_" in c:
+            dd[c.split("_var_")[0]].append(c)
+
     X = covars.values
     X, scale = standardize(X)
     X = add_intercept(X)
+
+    skip = [v[0] for _, v in dd.items()]
+    cc = np.array([1] + [c not in skip for i, c in enumerate(cols)]).astype(bool)
+    skip_corr = np.where(np.triu(np.abs(np.corrcoef(X.T[cc])), k=1) >= (1 - 1e-5))[0]
+    cc[cc] = np.array([True] + [(i not in skip_corr) for i, _ in enumerate(cols[cc[1:]])])
+    X = X[:, cc]
+
     
-    return X, covars.columns, scale
+    return X, covars.columns[cc[1:]], scale
 
 
 def  load_from_csv(
         covars_path: str, 
         results_path: str,
         covars_group_col: Optional[str]="group_id", 
-        results_group_col: Optional[str]="group_id"
+        results_group_col: Optional[str]="group_id",
+        Y_cols: Optional[Iterable[str]]=["y"],
+        N_cols: Optional[Iterable[str]]=["n"]
 ) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
     """Load covariates and results from csvs and split into groups, covars and results.
     Args:
@@ -97,7 +114,8 @@ def  load_from_csv(
     groups = groups_and_covars[covars_group_col]
     covars = groups_and_covars.drop(columns=[covars_group_col])
     results = pd.read_csv(results_path).set_index(results_group_col)
-    return groups, covars, results
+
+    return groups, covars, results, Y_cols, N_cols
 
 
 def  load_from_long_csv(
@@ -106,8 +124,8 @@ def  load_from_long_csv(
         covars_group_col: Optional[str]="group_id", 
         results_group_col: Optional[str]="group_id",
         pivot_col: Optional[str]="outcome",
-        Y_col: Optional[str]="Y",
-        N_col: Optional[str]="N"
+        Y_col: Optional[str]="y",
+        N_col: Optional[str]="n"
 ) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
     """Load covariates and results from csvs and split into groups, covars and results.
     Args:
@@ -122,11 +140,10 @@ def  load_from_long_csv(
     Returns:
         tuple: groups, covars, results
     """
-    groups, covars, results = load_from_csv(
+    groups, covars, results, _, _ = load_from_csv(
         covars_path, results_path, 
         covars_group_col=covars_group_col, results_group_col=results_group_col
     )
-    print(results)
     results = results.pivot(columns=pivot_col)
     
     Y_cols = [col for col in results.columns if Y_col in col and N_col not in col]
@@ -154,9 +171,9 @@ def transform_from_df(
         tuple: individual_frame_Xs, individual_frame_Ns, individual_frame_Ys, group_frame_Ns
     """
     if Y_cols is None:
-        Y_cols = ["Y"]
+        Y_cols = ["y"]
     if N_cols is None:
-        N_cols = ["N"]
+        N_cols = ["n"]
 
     # transform covars
     if verbose > 0:

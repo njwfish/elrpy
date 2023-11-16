@@ -14,7 +14,7 @@ def binary_model(model_params, X):
     """
     return sigmoid(np.tensordot(X, model_params, axes=1))
 
-def init_binary(d):
+def init_binary(group_data):
     """Initializes the model parameters for the binary model.
 
     Args:
@@ -26,7 +26,8 @@ def init_binary(d):
     Returns:
         tuple: model and model parameters
     """
-    return binary_model, np.zeros((d,))
+    d = next(iter(group_data[0].values())).shape[1]
+    return binary_model, np.zeros((1, d))
 
 def categorical_model(model_params, X):
     """Returns the softmax of the logits of the linear model.

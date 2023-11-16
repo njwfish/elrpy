@@ -1,6 +1,6 @@
 import numpy as np
 
-def standardize(X, axis=0):
+def standardize(X, axis=0, eps=1e-8):
     """Standardize data along axis.
 
     Args:
@@ -10,10 +10,15 @@ def standardize(X, axis=0):
     Returns:
         tuple: Standardized data and mean along axis.
     """
+    # max_mask = np.max(np.abs(X), axis=axis) > (1.0 + eps)
     # mean = np.mean(X, axis=axis)
     # std = np.std(X, axis=axis)
+    # print(np.max(std))
+    # print(np.min(np.abs( (max_mask * std + (1 - max_mask)))))
+    # return (X - mean * max_mask) / (max_mask * std + (1 - max_mask)), (mean, std, max_mask)
     max_val = np.max(np.abs(X), axis=axis)
-    return X / max_val, max_val
+    max_mask = max_val > (1.0 + eps)
+    return X / (max_val * max_mask + (1 - max_mask)) , max_val
 
 def add_intercept(X):
     """Add intercept to data.
