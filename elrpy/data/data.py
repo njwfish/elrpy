@@ -60,7 +60,7 @@ def load(
     if save_npz:
         if verbose > 0:
             print("Saving data to npz.")
-        save_transform_data(os.path.join(data_dir, f"transforms.npz"), columns, scale)
+        save_transform_data(os.path.join(os.path.dirname(covars_path), f"transforms.npz"), columns, scale)
         save_group_data(npz_path, group_Xs, group_Ys, group_Ns)
     
     return group_Xs, group_Ys, group_Ns
