@@ -27,7 +27,7 @@ def get_cg_fn(loss_and_grad_fn, hess_fn, l2=0.0):
         hess = hess_fn(params, *args)
         loss += 0.5 * l2 * np.sum(params ** 2)
         grad += l2 * params
-        hess += l2 * np.eye(hess.shape[0])
+        hess += l2 * np.eye(hess.shape[-1])
         return np.mean(loss), jax.vmap(np.linalg.lstsq, in_axes=(0, 0))(hess, grad)[0], np.max(np.linalg.norm(grad, axis=-1))
     return cg_fn
 
@@ -125,6 +125,7 @@ def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4
         _, grad = grad_fn(params, *args) 
         hess = hess_fn(params, *args)
         grad, hess, updated_params, cg = cp(params, grad, hess)
+        print(updated_params.shape)
         losses = loss_fn(updated_params, *args) 
         losses, cg, grad_norm = gl(losses, cg, params, grad)
         return np.mean(losses), cg, np.max(grad_norm)
@@ -193,7 +194,7 @@ def fit(
         history = []
 
     for i in range(maxit):
-        out = mapped_loss_and_dir_fn(model_params, group_data)
+        out = mapped_loss_and_dir_fn(model_params, *group_data)
         if len(out) == 2:
             loss, grad = out
             grad_norm = np.linalg.norm(grad, axis=-1)

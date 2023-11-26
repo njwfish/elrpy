@@ -61,7 +61,7 @@ def get_dims(group_data):
     num_outcomes = next(iter(group_Ys.values())).shape[0]
     return num_groups, dim, num_outcomes
 
-def get_bootstrap_weights(rng, group_data, num_boots, estimate_on_all=False, sample_by_group_size=True):
+def get_bootstrap_weights(rng, G, num_boots, estimate_on_all=False, sample_by_group_size=True):
     """Returns bootstrap weights for each group.
     
     Args:
@@ -74,9 +74,8 @@ def get_bootstrap_weights(rng, group_data, num_boots, estimate_on_all=False, sam
         dict: dictionary of bootstrap weights for each group
     """
     num_boots -= estimate_on_all
-    num_groups = len(group_data[0])
-    group_sizes, tree_def = jax.tree_flatten(jax.tree_map(lambda x: x.shape[0], group_data[0])) 
-    group_sizes = np.array(group_sizes)
+    num_groups = G.shape[0]
+    group_sizes = np.squeeze(G @ np.ones((G.shape[1], 1)))
     if sample_by_group_size:
         group_idx = jax.random.choice(rng, num_groups, shape=(num_groups, num_boots), p=group_sizes / np.sum(group_sizes))
     else:
@@ -85,5 +84,4 @@ def get_bootstrap_weights(rng, group_data, num_boots, estimate_on_all=False, sam
     weights = jax.vmap(lambda w, idx: w.at[idx].add(1), in_axes=(1, 1))(weights, group_idx).T
     if estimate_on_all:
         weights = np.hstack([np.ones((num_groups, 1)), weights])
-    group_weights = {g: w[:, None] for g, w in zip(group_data[0], weights)}
-    return group_weights
+    return weights.T

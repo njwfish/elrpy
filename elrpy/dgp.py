@@ -1,7 +1,9 @@
 import jax
 from jax import numpy as np
 from jax.nn import sigmoid
+from jax.experimental import sparse
 
+from jax.experimental import sparse
 def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
     """Simulate data from a normal mixture model with binary outcomes.
 
@@ -33,16 +35,14 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
+    G = jax.nn.one_hot(g, k)
+    G = sparse.BCOO.fromdense(G).T
 
     p = sigmoid(X @ beta)
     rng, next_rng = jax.random.split(rng)
     Y = jax.random.bernoulli(next_rng, p)
 
-    group_indices = {int(group): np.where(group == g)[0] for group in range(k)}
-    group_Xs = jax.tree_util.tree_map(lambda idx: X[idx], group_indices)
-    group_Ys = jax.tree_util.tree_map(lambda idx: np.sum(Y[idx]), group_indices)
-    group_Ns = jax.tree_util.tree_map(lambda idx: idx.shape[0], group_indices)
-    return beta, gamma, X, Y, (group_Xs, group_Ys, group_Ns)
+    return beta, gamma, X, Y, G @ Y, G
 
 
 def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
@@ -80,13 +80,10 @@ def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
+    G = jax.nn.one_hot(g, k)
+    G = sparse.BCOO.fromdense(G).T
 
     rng, next_rng = jax.random.split(rng)
     Y = jax.random.categorical(rng, np.tensordot(X, beta, axes=1))
     Y = jax.nn.one_hot(Y, p)
-
-    group_indices = {int(group): np.where(group == g)[0] for group in range(k)}
-    group_Xs = jax.tree_util.tree_map(lambda idx: X[idx], group_indices)
-    group_Ys = jax.tree_util.tree_map(lambda idx: np.sum(Y[idx], axis=0), group_indices)
-    group_Ns = jax.tree_util.tree_map(lambda idx: idx.shape[0], group_indices)
-    return beta, gamma, X, Y, (group_Xs, group_Ys, group_Ns)
+    return beta, gamma, X, Y, G @ Y, G

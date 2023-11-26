@@ -12,9 +12,12 @@ def binary_model(model_params, X):
     Returns:
         np.ndarray: sigmoid of the linear model
     """
-    return sigmoid(np.tensordot(X, model_params, axes=1))
+    p = sigmoid(X @ model_params)
+    if len(p.shape) == 1:
+        p = p[:, None]
+    return p
 
-def init_binary(group_data):
+def init_binary(X):
     """Initializes the model parameters for the binary model.
 
     Args:
@@ -26,8 +29,8 @@ def init_binary(group_data):
     Returns:
         tuple: model and model parameters
     """
-    d = next(iter(group_data[0].values())).shape[1]
-    return binary_model, np.zeros((1, d))
+    d = X.shape[1]
+    return binary_model, np.zeros((d,))
 
 def categorical_model(model_params, X):
     """Returns the softmax of the logits of the linear model.
