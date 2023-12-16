@@ -28,6 +28,7 @@ def get_cg_fn(loss_and_grad_fn, hess_fn, l2=0.0):
         loss += 0.5 * l2 * np.sum(params ** 2)
         grad += l2 * params
         hess += l2 * np.eye(hess.shape[0])
+        
         return np.mean(loss), jax.vmap(np.linalg.lstsq, in_axes=(0, 0))(hess, grad)[0], np.max(np.linalg.norm(grad, axis=-1))
     return cg_fn
 

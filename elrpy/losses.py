@@ -43,9 +43,6 @@ def lyapunov_binary_loss(p, Y, N, weights=None, eps=1e-6):
     Returns:
         float: a normal approximation to the combinatorial log-likelihood.
     """
-    # N = p.shape[0]
-    # max_p = N / (N + 1)
-    # p = np.clip(p, 1 - max_p, max_p)
     phi2 = np.maximum(np.sum(p * (1 - p), axis=0), eps)
     mu = np.sum(p, axis=0)
     logp = 1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
