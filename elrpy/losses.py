@@ -45,7 +45,7 @@ def lyapunov_binary_loss(p, Y, N, weights=None, eps=1e-6):
     """
     phi2 = np.maximum(np.sum(p * (1 - p), axis=0), eps)
     mu = np.sum(p, axis=0)
-    logp = 1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
+    logp = -1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
     if weights is not None:
         logp = weights * logp
     return -logp
