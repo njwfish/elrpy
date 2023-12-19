@@ -2,7 +2,7 @@ import jax
 from jax import numpy as np
 from jax.nn import sigmoid
 
-def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
+def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, link=sigmoid):
     """Simulate data from a normal mixture model with binary outcomes.
 
     Args:
@@ -34,7 +34,7 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
 
-    p = sigmoid(X @ beta)
+    p = link(X @ beta)
     rng, next_rng = jax.random.split(rng)
     Y = jax.random.bernoulli(next_rng, p)
 

@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as np
 from jax.nn import sigmoid, softmax
+from jax.scipy.stats.norm import cdf as probit
 
 def binary_model(model_params, X):
     """Returns the sigmoid of the linear model.
@@ -13,6 +14,18 @@ def binary_model(model_params, X):
         np.ndarray: sigmoid of the linear model
     """
     return sigmoid(np.tensordot(X, model_params, axes=1))
+
+def probit_model(model_params, X):
+    """Returns the sigmoid of the linear model.
+
+    Args:
+        model_params (np.ndarray): model parameters
+        X (np.ndarray): data matrix
+
+    Returns:
+        np.ndarray: sigmoid of the linear model
+    """
+    return probit(np.tensordot(X, model_params, axes=1))
 
 def init_binary(group_data):
     """Initializes the model parameters for the binary model.
