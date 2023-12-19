@@ -82,13 +82,11 @@ def transform_covars(
     X, scale = standardize(X)
     X = add_intercept(X)
 
-    skip = [v[0] for _, v in dd.items()]
+    skip = [v[-2] for _, v in dd.items()]
     cc = np.array([1] + [c not in skip for i, c in enumerate(cols)]).astype(bool)
-    skip_corr = np.where(np.triu(np.abs(np.corrcoef(X.T[cc])), k=1) >= (1 - 1e-5))[0]
-    cc[cc] = np.array([True] + [(i not in skip_corr) for i, _ in enumerate(cols[cc[1:]])])
+    # skip_corr = np.where(np.triu(np.abs(np.corrcoef(X.T[cc])), k=1) >= (1 - 1e-5))[0]
+    # cc[cc] = np.array([True] + [(i not in skip_corr) for i, _ in enumerate(cols[cc[1:]])])
     X = X[:, cc]
-
-    
     return X, covars.columns[cc[1:]], scale
 
 
