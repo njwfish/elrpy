@@ -1,10 +1,6 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "elrpy"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Nic Fishman", email="njwfish@gmail.com" },
 ]
