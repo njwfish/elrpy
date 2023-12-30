@@ -47,7 +47,7 @@ def categorical_model(model_params, X):
     
     logits = np.tensordot(X, model_params, axes=1)
     logits = np.concatenate([logits, np.zeros((*logits.shape[:-1], 1))], axis=-1)
-    return softmax(logits)[..., :-1]
+    return softmax(logits)
 
 def init_categorical(d, p):
     """Initializes the model parameters for the categorical model.

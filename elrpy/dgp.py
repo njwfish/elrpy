@@ -1,7 +1,6 @@
 import jax
 from jax import numpy as np
 from jax.nn import sigmoid
-from jax.experimental import sparse
 
 from jax.experimental import sparse
 def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
@@ -35,8 +34,8 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
-    G = jax.nn.one_hot(g, k)
-    G = sparse.BCOO.fromdense(G).T
+    # G = jax.nn.one_hot(g, k)
+    G = sparse.BCOO((np.ones(g.shape[0]), np.vstack([np.arange(g.shape[0]), g]).T), shape=(g.shape[0], k)).T
 
     p = sigmoid(X @ beta)
     rng, next_rng = jax.random.split(rng)

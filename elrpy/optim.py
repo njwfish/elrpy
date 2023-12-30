@@ -28,7 +28,7 @@ def get_cg_fn(loss_and_grad_fn, hess_fn, l2=0.0):
         loss += 0.5 * l2 * np.sum(params ** 2)
         grad += l2 * params
         hess += l2 * np.eye(hess.shape[-1])
-        return np.mean(loss), jax.vmap(np.linalg.lstsq, in_axes=(0, 0))(hess, grad)[0], np.max(np.linalg.norm(grad, axis=-1))
+        return np.mean(loss), np.linalg.lstsq(hess, grad)[0], np.linalg.norm(grad, axis=-1)
     return cg_fn
 
 def clip_inv_prod(eps, grad, u, v):
@@ -109,8 +109,8 @@ def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4
         return losses[min_idx], cg[:, min_idx], np.linalg.norm(grad)
 
     # vectorize helper functions
-    cp = jax.jit(jax.vmap(cp, in_axes=(0, 0, 0)))
-    gl = jax.jit(jax.vmap(gl, in_axes=(0, 0, 0, 0)))
+    # cp = jax.jit(jax.vmap(cp, in_axes=(0, 0, 0)))
+    # gl = jax.jit(jax.vmap(gl, in_axes=(0, 0, 0, 0)))
 
     def cg_fn(params, *args):
         """Conjugate gradient function using clipped inverse product.
@@ -122,15 +122,13 @@ def get_clipped_cg_fn(loss_fn, grad_fn, hess_fn, start_clip=1e-1, stop_clip=1e-4
         Returns:
             tuple: loss, conjugate gradient, gradient norm.
         """
-        _, grad = grad_fn(params, *args) 
+        loss, grad = grad_fn(params, *args) 
         hess = hess_fn(params, *args)
         grad, hess, updated_params, cg = cp(params, grad, hess)
-        print(updated_params.shape)
-        losses = loss_fn(updated_params, *args) 
+        losses = jax.vmap(loss_fn, in_axes=(1, *([None] * len(args))))(updated_params, *args) 
         losses, cg, grad_norm = gl(losses, cg, params, grad)
-        return np.mean(losses), cg, np.max(grad_norm)
+        return loss, cg, np.max(grad_norm)
     return cg_fn
-
 
 def fit(
         loss_fn: Callable, 
@@ -146,7 +144,8 @@ def fit(
         save_dir: Optional[str] = None,
         mapped_loss_and_dir_fn = None,
         group_weights=None,
-        keep_history=False
+        keep_history=False,
+        dir_type='cg'
 ) -> Tuple[dict, float]:
     """Fit a model to data using directional descent with the given loss and direction functions.
 
@@ -171,21 +170,21 @@ def fit(
     """
     if mapped_loss_and_dir_fn is None:
         from elrpy.losses import get_wrapped_loss
-        from elrpy.utils import get_mean_fn, get_mapped_fn
-        print("Gradient functions not provided, these will be recompiled...")
-        num_groups = len(group_data[0])
-        loss_fn = get_wrapped_loss(loss_fn, model_fn, num_groups)
-        if group_weights is None:
-            mapped_loss_fn = get_mapped_fn(jax.jit(jax.vmap(loss_fn, in_axes=(0, None, None, None))))
-            grad_fn = jax.jit(jax.vmap(jax.value_and_grad(get_mean_fn(loss_fn)), in_axes=(0, None, None, None)))
-            hess_fn = jax.jit(jax.vmap(jax.hessian(get_mean_fn(loss_fn)), in_axes=(0, None, None, None)))
-        else:
-            mapped_loss_fn = get_mapped_fn(jax.jit(jax.vmap(loss_fn, in_axes=(0, None, None, None, 0))))
-            grad_fn = jax.jit(jax.vmap(jax.value_and_grad(get_mean_fn(loss_fn)), in_axes=(0, None, None, None, 0)))
-            hess_fn = jax.jit(jax.vmap(jax.hessian(get_mean_fn(loss_fn)), in_axes=(0, None, None, None, 0)))
-        mapped_loss_and_grad_fn = get_mapped_fn(grad_fn)
-        mapped_hess_fn = get_mapped_fn(hess_fn)
-        mapped_loss_and_dir_fn = get_clipped_cg_fn(mapped_loss_fn, mapped_loss_and_grad_fn, mapped_hess_fn)
+        if verbose > 0:
+            print("Gradient functions not provided, these will be recompiled...")
+        wrapped_loss_fn = get_wrapped_loss(loss_fn, model_fn)
+        if dir_type == 'cg':
+            if group_weights is None:
+                _loss_fn = wrapped_loss_fn
+                loss_and_grad_fn = jax.value_and_grad(wrapped_loss_fn)
+                hess_fn = jax.hessian(wrapped_loss_fn)
+            else:
+                _loss_fn = jax.vmap(wrapped_loss_fn, in_axes=(0, None, None, None))
+                loss_and_grad_fn = jax.vmap(jax.value_and_grad(wrapped_loss_fn), in_axes=(0, None, None, None))
+                hess_fn = jax.vmap(jax.hessian(wrapped_loss_fn), in_axes=(0, None, None, None))
+            mapped_loss_and_dir_fn = jax.jit(get_clipped_cg_fn(_loss_fn, loss_and_grad_fn, hess_fn))
+        elif dir_type == 'gd':
+            mapped_loss_and_dir_fn = jax.jit(jax.value_and_grad(wrapped_loss_fn))
 
     if group_weights is not None:
         group_data = (group_data[0], group_data[1], group_data[2], group_weights)
@@ -202,9 +201,13 @@ def fit(
             loss, grad, grad_norm = out
         else:
             raise ValueError("Unexpected number of outputs from mapped loss and gradient function.")
+        
+        if keep_history:
+            history.append((model_params, loss, grad_norm))
 
         if np.any(np.isnan(grad)):
-            print("NaN gradient update, aborting...")
+            if verbose > 0:
+                print(f"NaN gradient update, aborting with loss {loss}...")
             break
         
         if i % print_every == 0 and verbose == 2:
@@ -216,8 +219,6 @@ def fit(
             break
 
         model_params -= (grad_norm >= tol) * lr * grad
-        if keep_history:
-            history.append((model_params, loss, grad_norm))
         if i % save_every == 0 and save_dir is not None:
             np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
 
@@ -225,7 +226,9 @@ def fit(
         print(f"Failed to converge, gradient norm is {grad_norm}.")
     if save_dir is not None:
         np.savez(f"{save_dir}/model.npz", model_params=model_params, grad_norm=grad_norm, i=i)
+
+    if keep_history:
+        params, losses, grad_norms = (np.array(z) for z in zip(*history))
+        history = (params, losses, grad_norms)
     
     return (model_params, grad_norm, history) if keep_history else (model_params, grad_norm)
-
-
