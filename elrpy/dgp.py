@@ -3,7 +3,7 @@ from jax import numpy as np
 from jax.nn import sigmoid
 
 from jax.experimental import sparse
-def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
+def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, intercept=True):
     """Simulate data from a normal mixture model with binary outcomes.
 
     Args:
@@ -22,7 +22,11 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
         dict: group outcome vectors
     """
     rng, next_rng = jax.random.split(rng)
-    X = jax.random.normal(next_rng, shape=(n, d))
+    if intercept:
+        X = jax.random.normal(next_rng, shape=(n, d - 1))
+        X = np.hstack([np.ones((n, 1)), X])
+    else:
+        X = jax.random.normal(next_rng, shape=(n, d))
 
     if beta is None:
         rng, next_rng = jax.random.split(rng)
@@ -34,7 +38,6 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
-    # G = jax.nn.one_hot(g, k)
     G = sparse.BCOO((np.ones(g.shape[0]), np.vstack([np.arange(g.shape[0]), g]).T), shape=(g.shape[0], k)).T
 
     p = sigmoid(X @ beta)
