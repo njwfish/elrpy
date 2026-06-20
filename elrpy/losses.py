@@ -1,7 +1,7 @@
 import jax
 from jax import numpy as np
 
-def get_wrapped_loss(loss_fn, model_fn, num_groups):
+def get_wrapped_loss(loss_fn, model_fn, axis=None):
     """Wrap loss function to take model parameters and group data.
 
     Args:
@@ -12,7 +12,7 @@ def get_wrapped_loss(loss_fn, model_fn, num_groups):
     Returns:
         function: wrapped loss function.
     """
-    def wrapped_loss(model_params, group_X, group_Y, group_N, group_weight=None):
+    def wrapped_loss(model_params, X, Y, G, weights=None):
         """Wrapped loss function.
 
         Args:
@@ -25,14 +25,13 @@ def get_wrapped_loss(loss_fn, model_fn, num_groups):
         Returns:
             float: loss.
         """
-        return loss_fn(
-            model_fn(model_params, group_X), group_Y, group_N, weights=group_weight
-        ) / num_groups
+        return np.mean(loss_fn(
+            model_fn(model_params, X), Y, G, weights=weights
+        ), axis=axis)
     
     return wrapped_loss
 
-
-def lyapunov_binary_loss(p, Y, N, weights=None, eps=1e-6):
+def lyapunov_binary_loss(p, Y, G, weights=None, eps=1e-6):
     """Lyapunov Central Limit loss for binary outcomes.
     
     Args:
@@ -43,9 +42,9 @@ def lyapunov_binary_loss(p, Y, N, weights=None, eps=1e-6):
     Returns:
         float: a normal approximation to the combinatorial log-likelihood.
     """
-    phi2 = np.maximum(np.sum(p * (1 - p), axis=0), eps)
-    mu = np.sum(p, axis=0)
-    logp = -1/2 * np.log(phi2) - (1 / phi2) * (Y - mu)**2
+    mu = G @ p
+    phi2 = np.maximum(G @ (p * (1 - p)), eps)
+    logp = -np.log(phi2) - (1 / phi2) * (Y - mu)**2
     if weights is not None:
         logp = weights * logp
-    return -logp
+    return -1/2 * logp

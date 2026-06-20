@@ -4,15 +4,19 @@ build-backend = "hatchling.build"
 
 [project]
 name = "elrpy"
-version = "0.0.2"
+version = "0.0.5"
 authors = [
   { name="Nic Fishman", email="njwfish@gmail.com" },
 ]
-description = "A lightweight package for individual level inference in elections backed by jax."
+description = "A lightweight package for individual-level ecological regression backed by JAX."
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "pandas", "numpy", "jax", "jaxlib"
+    "pandas",
+    "numpy",
+    "jax",
+    "jaxlib",
+    "scipy",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -21,5 +25,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/DataforProgress/elrpy/"
-"Bug Tracker" = "https://github.com/DataforProgress/elrpy/tree/issues"
+"Homepage" = "https://github.com/njwfish/elrpy/"
+"Bug Tracker" = "https://github.com/njwfish/elrpy/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["elrpy"]

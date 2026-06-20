@@ -2,7 +2,8 @@ import jax
 from jax import numpy as np
 from jax.nn import sigmoid
 
-def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, link=sigmoid):
+from jax.experimental import sparse
+def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, intercept=True, fixed_effects=False, random_effects=False):
     """Simulate data from a normal mixture model with binary outcomes.
 
     Args:
@@ -21,11 +22,15 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, link=sigmoid):
         dict: group outcome vectors
     """
     rng, next_rng = jax.random.split(rng)
-    X = jax.random.normal(next_rng, shape=(n, d))
+    if intercept:
+        X = jax.random.normal(next_rng, shape=(n, d - 1))
+        X = np.hstack([np.ones((n, 1)), X])
+    else:
+        X = jax.random.normal(next_rng, shape=(n, d))
 
     if beta is None:
         rng, next_rng = jax.random.split(rng)
-        beta = jax.random.normal(next_rng, shape=(d ,1))
+        beta = jax.random.normal(next_rng, shape=(d,))
 
     if gamma is None:
         rng, next_rng = jax.random.split(rng)
@@ -33,19 +38,31 @@ def normal_sim_binary(rng, n, d, k, beta=None, gamma=None, link=sigmoid):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
+    G = sparse.BCOO((np.ones(g.shape[0]), np.vstack([np.arange(g.shape[0]), g]).T), shape=(g.shape[0], k)).T
 
-    p = link(X @ beta)
+    logits = (X @ beta)[:, None]
+
+    if fixed_effects or random_effects:
+        alpha = np.zeros((n, 1))
+        if fixed_effects:
+            rng, next_rng = jax.random.split(rng)
+            alpha += G.T @ jax.random.normal(next_rng, shape=(k, 1))
+        if random_effects:
+            rng, next_rng = jax.random.split(rng)
+            z = jax.random.normal(next_rng, shape=(n, 1))
+            alpha += z
+        logits += alpha
+
     rng, next_rng = jax.random.split(rng)
-    Y = jax.random.bernoulli(next_rng, p)
+    Y = jax.random.bernoulli(next_rng, sigmoid(logits))
 
-    group_indices = {int(group): np.where(group == g)[0] for group in range(k)}
-    group_Xs = jax.tree_util.tree_map(lambda idx: X[idx], group_indices)
-    group_Ys = jax.tree_util.tree_map(lambda idx: np.sum(Y[idx]), group_indices)
-    group_Ns = jax.tree_util.tree_map(lambda idx: idx.shape[0], group_indices)
-    return beta, gamma, X, Y, (group_Xs, group_Ys, group_Ns)
+    if fixed_effects or random_effects:
+        return beta, gamma, X, Y, G @ Y, G, alpha
+
+    return beta, gamma, X, Y, G @ Y, G
 
 
-def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
+def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None, intercept=True, fixed_effects=False, random_effects=False):
     """Simulate data from a normal mixture model with categorical outcomes.
     
     Args:
@@ -66,8 +83,11 @@ def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
         dict: group outcome vectors
     """
     rng, next_rng = jax.random.split(rng)
-    X = jax.random.normal(next_rng, shape=(n, d - 1))
-    X = np.hstack([np.ones((n, 1)), X])
+    if intercept:
+        X = jax.random.normal(next_rng, shape=(n, d - 1))
+        X = np.hstack([np.ones((n, 1)), X])
+    else:
+        X = jax.random.normal(next_rng, shape=(n, d))
 
     if beta is None:
         rng, next_rng = jax.random.split(rng)
@@ -80,13 +100,26 @@ def normal_sim_categorical(rng, n, d, k, p, eps=1e-6, beta=None, gamma=None):
 
     rng, next_rng = jax.random.split(rng)
     g = jax.random.categorical(rng, X @ gamma)
+    G = sparse.BCOO((np.ones(g.shape[0]), np.vstack([np.arange(g.shape[0]), g]).T), shape=(g.shape[0], k)).T
 
+    logits = np.tensordot(X, beta, axes=1)
+
+    if fixed_effects or random_effects:
+        alpha = np.zeros((n, p - 1))
+        if fixed_effects:
+            rng, next_rng = jax.random.split(rng)
+            alpha += G.T @ jax.random.normal(next_rng, shape=(k, p - 1))
+        if random_effects:
+            rng, next_rng = jax.random.split(rng)
+            z = jax.random.normal(next_rng, shape=(n, p - 1))
+            alpha += z
+        logits += alpha
+    
     rng, next_rng = jax.random.split(rng)
-    Y = jax.random.categorical(rng, np.tensordot(X, beta, axes=1))
+    Y = jax.random.categorical(rng, logits)
     Y = jax.nn.one_hot(Y, p)
 
-    group_indices = {int(group): np.where(group == g)[0] for group in range(k)}
-    group_Xs = jax.tree_util.tree_map(lambda idx: X[idx], group_indices)
-    group_Ys = jax.tree_util.tree_map(lambda idx: np.sum(Y[idx], axis=0), group_indices)
-    group_Ns = jax.tree_util.tree_map(lambda idx: idx.shape[0], group_indices)
-    return beta, gamma, X, Y, (group_Xs, group_Ys, group_Ns)
+    if fixed_effects or random_effects:
+        return beta.flatten(), gamma, X, Y, G @ Y, G, alpha
+
+    return beta.flatten(), gamma, X, Y, G @ Y, G
